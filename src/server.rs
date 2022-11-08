@@ -1,7 +1,15 @@
+use std::fs;
+use tokio::io::AsyncWriteExt;
+use tokio::net::TcpListener;
+use tokio::sync::broadcast;
+
+use crate::vars;
+use crate::common;
+
 pub async fn server() {
     // get num subs
     let mut subs: u64;
-    let subs_file_res = fs::read_to_string(SUBS_FILE);
+    let subs_file_res = fs::read_to_string(vars::SUBS_FILE);
     match subs_file_res {
         Ok(num_str) => match num_str.parse::<u64>() {
             Ok(num) => {
@@ -15,7 +23,7 @@ pub async fn server() {
         Err(_) => {
             println!("Couldn't read $HOME/.config/curate/subs.txt, creating it now. This file should contain a number of how many subscribers you have so you can track it. This program will modify your subs count as needed.");
             subs = 0;
-            match fs::write(SUBS_FILE, format!("{}", subs)) {
+            match fs::write(vars::SUBS_FILE, format!("{}", subs)) {
                 Ok(_) => {}
                 Err(_) => {
                     println!("Failed to write to $HOME/.config/curate/subs.txt");
@@ -26,13 +34,13 @@ pub async fn server() {
 
     // get curation
     let curation: String;
-    let curation_file_res = fs::read_to_string(CURATE_FILE);
+    let curation_file_res = fs::read_to_string(vars::CURATE_FILE);
     match curation_file_res {
         Ok(msg) => match msg.as_str() {
             "" => {
                 println!(
                     "Please enter at least one curation in {} to run your server.",
-                    CURATE_FILE
+                    vars::CURATE_FILE
                 );
                 return;
             }
@@ -43,12 +51,12 @@ pub async fn server() {
         Err(_) => {
             println!(
                 "To start curating, place a curation entry into the {} file.",
-                CURATE_FILE
+                vars::CURATE_FILE
             );
-            match fs::write(CURATE_FILE, "") {
+            match fs::write(vars::CURATE_FILE, "") {
                 Ok(_) => {}
                 Err(_) => {
-                    println!("Failed to create {} file, do it yourself.", CURATE_FILE);
+                    println!("Failed to create {} file, do it yourself.", vars::CURATE_FILE);
                 }
             }
             return;
@@ -56,11 +64,11 @@ pub async fn server() {
     }
 
     // run actual server code
-    let this_addr = format!("localhost:{}", PORT);
+    let this_addr = format!("localhost:{}", vars::PORT);
     let listener = TcpListener::bind(this_addr)
         .await
-        .expect(format!("Couldn't set up network listener on port {}", PORT).as_str());
-    let (tx, rx) = broadcast::channel::<String>(MAX_SERVER_CONNECTIONS);
+        .expect(format!("Couldn't set up network listener on port {}", vars::PORT).as_str());
+    let (tx, rx) = broadcast::channel::<String>(vars::MAX_SERVER_CONNECTIONS);
     loop {
         let curation = curation.clone();
         let (mut socket, addr);
@@ -93,17 +101,14 @@ pub async fn server() {
             // check which command is being received
             let response: String = match result.as_str() {
                 "all" => curation,
-                "latest" => match latest_curation(&curation) {
-                    Ok(c) => c,
-                    Err(_) => String::from("Failed to find latest curation"),
-                },
+                "latest" => {todo!();}
                 "sub" => {
                     // received a new subscriber
                     subs += 1;
-                    match fs::write(SUBS_FILE, subs.to_string()) {
+                    match fs::write(vars::SUBS_FILE, subs.to_string()) {
                         Ok(_) => String::from("OK"),
                         Err(_) => {
-                            println!("Failed to update {}", SUBS_FILE);
+                            println!("Failed to update {}", vars::SUBS_FILE);
                             String::from("Failed to update sub count")
                         }
                     }
@@ -111,10 +116,10 @@ pub async fn server() {
                 "unsub" => {
                     // lost a subscriber
                     subs -= 1;
-                    match fs::write(SUBS_FILE, subs.to_string()) {
+                    match fs::write(vars::SUBS_FILE, subs.to_string()) {
                         Ok(_) => String::from("OK"),
                         Err(_) => {
-                            println!("Failed to update {}", SUBS_FILE);
+                            println!("Failed to update {}", vars::SUBS_FILE);
                             String::from("Failed to update sub count")
                         }
                     }
@@ -127,7 +132,7 @@ pub async fn server() {
 
             let mut retries = 0;
             let response_bytes = response.as_bytes();
-            while retries < MAX_SEND_RETRIES {
+            while retries < vars::MAX_SEND_RETRIES {
                 if let Err(_) = writer.write_all(response.as_bytes()).await {
                     println!("Failed to send response, trying again");
                     retries += 1;
